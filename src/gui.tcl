@@ -9,7 +9,7 @@
 set aboutMsg "
 GUI tool for FlexProp
 Version $spin2gui_version
-Copyright 2018-2020 Total Spectrum Software Inc.
+Copyright 2018-2021 Total Spectrum Software Inc.
 ------
 There is no warranty and no guarantee that
 output will be correct.   
@@ -27,9 +27,6 @@ set tcl_nonwordchars {[^[:alnum:]_]}
 # files are relative (usually the location of the program)
 #
 
-# config file name
-set CONFIG_FILE "$ROOTDIR/.flexprop.config"
-
 # prefix for shortcut keys (Command on Mac, Control elsewhere)
 if { [tk windowingsystem] == "aqua" } {
     set CTRL_PREFIX "Command"
@@ -45,6 +42,15 @@ if { $tcl_platform(os) == "Darwin" && [file exists "$ROOTDIR/bin/flexspin.mac"] 
     set EXE ".mac"
 }
 
+if { [file exists "$ROOTDIR/.flexprop.config"] } {
+    # portable installation
+    set CONFIGDIR $ROOTDIR
+} elseif { [info exists ::env(HOME) ] } {    
+    set CONFIGDIR $::env(HOME)
+} else {
+    set CONFIGDIR $ROOTDIR
+}
+
 # prefix for starting a command in a window
 if { $tcl_platform(platform) == "windows" } {
     set WINPREFIX "cmd.exe /c start \"Propeller Output %p\""
@@ -55,6 +61,9 @@ if { $tcl_platform(platform) == "windows" } {
 } else {
     set WINPREFIX "xterm -fs 14 -T \"Propeller Output %p\" -e"
 }
+
+# config file name
+set CONFIG_FILE "$CONFIGDIR/.flexprop.config"
 
 # default configuration variables
 # the config() array is written to the config file and read
@@ -73,6 +82,7 @@ set COMPORT " "
 set OPT "-O1"
 set COMPRESS "-z0"
 set WARNFLAGS "-Wnone"
+set FIXEDREAL "--floatreal"
 set DEBUG_OPT "-gnone"
 set PROP_VERSION ""
 set OPENFILES ""
@@ -223,6 +233,7 @@ proc config_open {} {
     global OPT
     global COMPRESS
     global WARNFLAGS
+    global FIXEDREAL
     global DEBUG_OPT
     global COMPORT
     global OPENFILES
@@ -256,6 +267,10 @@ proc config_open {} {
 	    warnflags {
 		# set warning flags
 		set WARNFLAGS [lindex $data 1]
+	    }
+	    fixedreal {
+		# set warning flags
+		set FIXEDREAL [lindex $data 1]
 	    }
 	    debugopt {
 		# set warning flags
@@ -295,6 +310,7 @@ proc config_save {} {
     global OPT
     global COMPRESS
     global WARNFLAGS
+    global FIXEDREAL
     global DEBUG_OPT
     global COMPORT
     global OPENFILES
@@ -310,6 +326,7 @@ proc config_save {} {
     puts $fp "comport\t\{$COMPORT\}"
     puts $fp "openfiles\t\{$OPENFILES\}"
     puts $fp "warnflags\t\{$WARNFLAGS\}"
+    puts $fp "fixedreal\t\{$FIXEDREAL\}"
     puts $fp "debugopt\t\{$DEBUG_OPT\}"
     foreach i [array names config] {
 	if {$i != ""} {
@@ -553,6 +570,8 @@ proc newTabName {} {
 proc createNewTab {} {
     global filenames
     global config
+    global tabEnterScript
+    global tabLeaveScript
     set w [newTabName]
     
     #.p.bot.txt delete 1.0 end
@@ -562,7 +581,12 @@ proc createNewTab {} {
     setfont $w.txt $config(font)
     .p.nb add $w
     .p.nb tab $w -text "New File"
+    
     .p.nb select $w
+
+    bind $w <Enter> $tabLeaveScript
+    bind $w <Leave> $tabEnterScript
+    
     return $w
 }
 
@@ -641,6 +665,7 @@ proc loadHelpFile {filename title} {
 	grid .help.f -sticky nsew
     }
     setfont .help.f.txt $config(font)
+    .help.f.txt configure -wrap word
     loadFileToWindow $filename .help.f.txt
     .help.f.txt yview moveto $viewpos
     wm title .help [file tail $filename]
@@ -1024,6 +1049,28 @@ proc doClickOnLink { w coord } {
 }
 
 #
+# help for tabs
+#
+proc tabHelp {w x y} {
+    #set sx $x
+    #set sy $y
+    set sx [expr [winfo pointerx $w]-[winfo rootx .p.nb]]
+    set sy [expr [winfo pointery $w]-[winfo rooty .p.nb]]
+    set t [.p.nb identify tab $sx $sy]
+    global filenames
+    if {$t ne ""} then {
+	set alltabs [.p.nb tabs]
+	set msg1 [.p.nb tab $t -text]
+	set msg2 [getWindowFile [lindex $alltabs $t]]
+	#set msg "$msg1: $msg2"
+	set msg "$msg2"
+	showBalloonHelp $w $msg
+    } else {
+	destroy .balloonHelp
+    }
+}
+
+#
 # set up syntax highlighting for a given ctext widget
 #
 
@@ -1300,6 +1347,9 @@ menu .mbar.help -tearoff 0
 .mbar.options add radiobutton -label "No extra warnings" -variable WARNFLAGS -value "-Wnone"
 .mbar.options add radiobutton -label "Enable compatibility warnings" -variable WARNFLAGS -value "-Wall"
 .mbar.options add separator
+.mbar.options add radiobutton -label "Use IEEE floating point" -variable FIXEDREAL -value "--floatreal"
+.mbar.options add radiobutton -label "Use 16.16 fixed point in place of floats" -variable FIXEDREAL -value "--fixedreal"
+.mbar.options add separator
 .mbar.options add radiobutton -label "Debug disabled" -variable DEBUG_OPT -value "-gnone"
 .mbar.options add radiobutton -label "Debug enabled" -variable DEBUG_OPT -value "-g"
 #.mbar.options add separator
@@ -1336,9 +1386,9 @@ set comport_last [.mbar.comport index end]
 .mbar.special add command -label "Enter P2 ROM TAQOZ" -command { doSpecial "-xTAQOZ" "" }
 .mbar.special add command -label "Load current buffer into TAQOZ" -command { doSpecial "-xTAQOZ" [scriptSendCurFile] }
 .mbar.special add separator
-.mbar.special add command -label "Run uPython on P2" -command { doSpecial "samples/upython/upython.binary" "" }
-.mbar.special add command -label "Load current buffer into uPython on P2" -command { doSpecial "samples/upython/upython.binary" [scriptSendCurFile] }
-.mbar.special add separator
+#.mbar.special add command -label "Run uPython on P2" -command { doSpecial "samples/upython/upython.binary" "" }
+#.mbar.special add command -label "Load current buffer into uPython on P2" -command { doSpecial "samples/upython/upython.binary" [scriptSendCurFile] }
+#.mbar.special add separator
 .mbar.special add command -label "Run proplisp on P2" -command { doSpecial "samples/proplisp/lisp.binary" "" }
 .mbar.special add command -label "Load current buffer into proplisp on P2" -command { doSpecial "samples/proplisp/lisp.binary" [scriptSendCurFile] }
 .mbar.special add separator
@@ -1351,6 +1401,9 @@ set comport_last [.mbar.comport index end]
 .mbar.help add command -label "BASIC Language" -command { launchBrowser "file://$ROOTDIR/doc/basic.html" }
 .mbar.help add command -label "C Language" -command { launchBrowser "file://$ROOTDIR/doc/c.html" }
 .mbar.help add command -label "Spin Language" -command { launchBrowser "file://$ROOTDIR/doc/spin.html" }
+.mbar.help add separator
+.mbar.help add command -label "Parallax P1 documentation" -command { launchBrowser "https://www.parallax.com/download/propeller-1-documentation/" }
+.mbar.help add command -label "Parallax P2 documentation" -command { launchBrowser "https://www.parallax.com/propeller-2/documentation" }
 .mbar.help add separator
 .mbar.help add command -label "About..." -command { doAbout }
 
@@ -1403,6 +1456,14 @@ bind . <$CTRL_PREFIX-l> { doListing }
 bind . <$CTRL_PREFIX-f> { searchrep [focus] 0 }
 bind . <$CTRL_PREFIX-k> { searchrep [focus] 1 }
 bind . <$CTRL_PREFIX-w> { closeTab }
+
+set toolTipScript [list tabHelp %W %x %y]
+set tabEnterScript [list after 1000 $toolTipScript]
+set tabLeaveScript [list after cancel $toolTipScript]
+append tabLeaveScript \n [list after 200 [list destroy .balloonHelp]]
+
+bind .p.nb <Enter> $tabEnterScript
+bind .p.nb <Leave> $tabLeaveScript
 
 # bind to right mouse button on Linux and Windows
 
@@ -1598,6 +1659,7 @@ proc mapPercent {str} {
     global ROOTDIR
     global OPT
     global WARNFLAGS
+    global FIXEDREAL
     global DEBUG_OPT
     global COMPRESS
     global COMPORT
@@ -1605,14 +1667,18 @@ proc mapPercent {str} {
 
     set ourwarn $WARNFLAGS
     set ourdebug $DEBUG_OPT
+    set ourfixed $FIXEDREAL
     if { "$ourwarn" eq "-Wnone" } {
 	set ourwarn ""
     }
     if { "$ourdebug" eq "-gnone" } {
 	set ourdebug ""
     }
+    if { "$ourfixed" eq "--floatreal" } {
+	set ourfixed ""
+    }
 #    set fulloptions "$OPT $ourwarn $COMPRESS"
-    set fulloptions "$OPT $ourwarn $ourdebug"
+    set fulloptions "$OPT $ourwarn $ourdebug $ourfixed"
     if { $COMPORT ne " " } {
 	set fullcomport "$COMPORT"
     } else {
@@ -1874,8 +1940,8 @@ proc doRunOptions {} {
     frame .runopts.change
     frame .runopts.end
 
-    ttk::button .runopts.change.p2a -text "P2a defaults" -command setShadowP2aDefaults
-    ttk::button .runopts.change.p2b -text "P2b defaults" -command setShadowP2bDefaults
+#    ttk::button .runopts.change.p2a -text "P2a defaults" -command setShadowP2aDefaults
+    ttk::button .runopts.change.p2b -text "P2 defaults" -command setShadowP2bDefaults
     ttk::button .runopts.change.p1 -text "P1 defaults" -command setShadowP1Defaults
     
     ttk::button .runopts.end.ok -text " OK " -command {copyShadowClose .runopts}
@@ -1892,7 +1958,7 @@ proc doRunOptions {} {
     grid .runopts.b.runtext -sticky nsew
     grid .runopts.c.flashtext -sticky nsew
 
-    grid .runopts.change.p2b .runopts.change.p2a .runopts.change.p1 -sticky nsew
+    grid .runopts.change.p2b .runopts.change.p1 -sticky nsew
     grid .runopts.end.ok .runopts.end.cancel -sticky nsew
     
     grid columnconfigure .runopts.a 0 -weight 1
@@ -1962,6 +2028,7 @@ proc searchrep {t {replace 1}} {
        focus $w
        $w.f icursor end
    }
+    bind $w <Destroy> "searchrep'done $t"
 }
 
 # Find the next instance
@@ -2003,6 +2070,13 @@ proc searchrep'rep1 w {
 proc searchrep'all w {
     set go 1
     while {$go} {set go [searchrep'rep1 $w]}
+}
+
+# done search
+proc searchrep'done w {
+    foreach {from to} [$w tag ranges hilite] {
+        $w tag remove hilite $from $to
+    }
 }
 
 # set the sash position on .p

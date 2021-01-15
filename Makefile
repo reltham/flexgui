@@ -55,15 +55,15 @@ endif
 # binaries to make
 #
 
-EXEBINFILES=bin/flexspin.exe bin/loadp2.exe bin/flexspin.mac bin/loadp2.mac bin/mac_terminal.sh 
+EXEBINFILES=bin/flexspin.exe bin/flexcc.exe bin/loadp2.exe bin/flexspin.mac bin/flexcc.mac bin/loadp2.mac bin/mac_terminal.sh 
 EXEFILES=flexprop.exe $(EXEBINFILES)
 
 ifdef OPENSPIN
 WIN_BINARIES=$(EXEBINFILES) bin/proploader.exe bin/proploader.mac
-NATIVE_BINARIES=bin/flexspin bin/loadp2 bin/proploader
+NATIVE_BINARIES=bin/flexspin bin/flexcc bin/loadp2 bin/proploader
 else
 WIN_BINARIES=$(EXEBINFILES)
-NATIVE_BINARIES=bin/flexspin bin/loadp2
+NATIVE_BINARIES=bin/flexspin bin/flexcc bin/loadp2
 endif
 
 install: flexprop_base $(NATIVE_BINARIES)
@@ -163,6 +163,8 @@ ifdef PANDOC_EXISTS
 	cp -r $(HTMLFILES) flexprop/doc
 endif
 	cp -r spin2cpp/doc/* flexprop/doc
+	cp -r spin2cpp/Changelog.txt flexprop/doc/Changelog-compiler.txt
+	cp -r Changelog.txt flexprop/doc/Changelog-gui.txt
 	cp -r loadp2/README.md flexprop/doc/loadp2.md
 	cp -r loadp2/LICENSE flexprop/doc/loadp2.LICENSE.txt
 	cp -r spin2cpp/COPYING.LIB flexprop/doc/COPYING.LIB
@@ -190,6 +192,9 @@ endif
 bin/flexspin: spin2cpp/build/flexspin
 	mkdir -p bin
 	cp $< $@
+bin/flexcc: spin2cpp/build/flexcc
+	mkdir -p bin
+	cp $< $@
 
 bin/proploader: proploader-$(OS)-build/bin/proploader
 	mkdir -p bin
@@ -200,6 +205,8 @@ bin/loadp2: loadp2/build/loadp2
 	cp $< $@
 
 spin2cpp/build/flexspin:
+	make -C spin2cpp
+spin2cpp/build/flexcc:
 	make -C spin2cpp
 
 proploader-$(OS)-build/bin/proploader: bin/flexspin
@@ -215,6 +222,11 @@ bin/flexspin.exe: spin2cpp/build-win32/flexspin.exe
 	cp $< $@
 	$(SIGN) bin/flexspin
 	mv bin/flexspin.signed.exe bin/flexspin.exe
+bin/flexcc.exe: spin2cpp/build-win32/flexcc.exe
+	mkdir -p bin
+	cp $< $@
+	$(SIGN) bin/flexcc
+	mv bin/flexcc.signed.exe bin/flexcc.exe
 
 bin/proploader.exe: proploader-msys-build/bin/proploader.exe
 	mkdir -p bin
@@ -232,6 +244,8 @@ bin/loadp2.exe: loadp2/build-win32/loadp2.exe
 
 spin2cpp/build-win32/flexspin.exe:
 	make -C spin2cpp CROSS=win32
+spin2cpp/build-win32/flexcc.exe:
+	make -C spin2cpp CROSS=win32
 
 ifneq ($(OS),msys)
 proploader-msys-build/bin/proploader.exe:
@@ -245,7 +259,7 @@ endif
 
 ifneq ($(OS),msys)
 loadp2/build-win32/loadp2.exe:
-	make -C loadp2 CROSS=win32
+	make -C loadp2 CROSS=win32 P2ASM="`pwd`/bin/flexspin -2 -I`pwd`/spin2cpp/include"
 endif
 
 $(RESOBJ): $(RES_RC)
@@ -263,8 +277,13 @@ bin/loadp2.mac: loadp2/build-macosx/loadp2
 bin/flexspin.mac: spin2cpp/build-macosx/flexspin
 	mkdir -p bin
 	cp $< $@
+bin/flexcc.mac: spin2cpp/build-macosx/flexcc
+	mkdir -p bin
+	cp $< $@
 
 spin2cpp/build-macosx/flexspin:
+	make -C spin2cpp CROSS=macosx
+spin2cpp/build-macosx/flexcc:
 	make -C spin2cpp CROSS=macosx
 
 loadp2/build-macosx/loadp2:
